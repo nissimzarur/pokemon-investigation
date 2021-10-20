@@ -1,28 +1,29 @@
+require('dotenv').config()
 var express = require("express");
 const axios = require("axios");
 
 const { pokemonNames, dangeresTypes, dangeresMoves } = require("../../data.js");
 const { savePokemonsInvestigation } = require("../../APIs/AWS/OpenSearch");
 
-var url = "https://pokeapi.co/api/v2/pokemon";
+var url = process.env.POKE_API_URL;
 var PokeAPI = express.Router();
 var pokemonsInvestigation = [];
 
 PokeAPI.get("/", (req, res) => {
-  // savePokemonsInvestigation([true]);
-  // return;
+  console.log("start...");
+
   const runOnPokemonsName = async () => {
     for (let index = 0; index < pokemonNames.length; index++) {
       const name = pokemonNames[index];
-
       await checkIfPokemonIsDangerByName(name);
-
-      if (index == pokemonNames.length - 1) {
-        console.log("total:" + pokemonsInvestigation.length);
-        savePokemonsInvestigation(pokemonsInvestigation);
-      }
     }
+
+	let requestResult = await savePokemonsInvestigation(pokemonsInvestigation);
+	if(!Array.isArray(requestResult) || !requestResult.length) return res.json({success:false, data:""});
+
+	res.json({success:(requestResult.length>0?true:false), data:requestResult});
   };
+  
   runOnPokemonsName();
 });
 
@@ -64,7 +65,7 @@ const checkIfPokemonIsDangerByName = async (name) => {
         }
       }
     })
-    .catch((err) => console.log(`----- bad request for '${err}' ------`));
+    .catch((err) => console.log(`Pokemon ${name} not found: '${err}'.`));
 };
 
 const isValidPokemon = (response) => {
@@ -103,35 +104,3 @@ const pokemonTypeNames = (types = []) => {
 };
 
 module.exports = PokeAPI;
-
-/*
- typeNames.forEach((tName) => {
-            if (tName && dangeresTypes.includes(tName)) {
-              const moveNames = pokemonMoveNames(response["data"]["moves"]);
-
-              if (!moveNames || !Array.isArray(moveNames))
-                return res.sendStatus(400);
-
-              moveNames.forEach((mName) => {
-                if (
-                  mName &&
-                  dangeresMoves.includes(mName) &&
-                  !existPokIds.includes(response["data"]["id"])
-                ) {
-                  let pokemonObj = {
-                    id: response["data"]["id"],
-                    name: response["data"]["name"],
-                    base_experience: response["data"]["base_experience"],
-                    height: response["data"]["height"],
-                    typeNames: typeNames,
-                    moveNames: moveNames,
-                  };
-
-                  existPokIds.push(pokemonObj.id);
-                  pokemonsInvestigation.push(pokemonObj);
-                }
-              });
-            }
-            console.log(pokemonsInvestigation.length);
-          });
-          */

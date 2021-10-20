@@ -1,61 +1,73 @@
 var AWS = require("aws-sdk");
+var elasticsearch = require('elasticsearch');
+var connectionClass = require('http-aws-es');
+const { uuid } = require('uuidv4');
 
-var region = "us-east-2"; // e.g. us-west-1
-var domain =
-  "https://search-pokemon-task-5pigc5ahw4xawcmvxfxa5lz3yq.us-east-2.es.amazonaws.com"; // e.g. search-domain.region.es.amazonaws.com
-var index = "pokemon_in_investigation";
-var type = "string";
-var id = "1";
+const awsConfig = {
+	domain:process.env.OPEN_SEARCH_DOMAIN,
+	region:process.env.REGION,
+	accessKeyId:process.env.ACCESS_KEY_ID,
+	secretAccessKey:process.env.SECRET_ACCESS_KEY
+};
 
-// const savePokemonsInvestigation = (dangerPokemons = {}) => {
-//   if (!dangerPokemons || Object.keys(dangerPokemons).length == 0) return false;
+var client = new elasticsearch.Client({
+	host: awsConfig.domain,
+	connectionClass: connectionClass,
+	protocol: 'https',
+	port: 443,
+	amazonES: {
+		region: awsConfig.region,
+		accessKey: awsConfig.accessKeyId,
+		secretKey: awsConfig.secretAccessKey
+	}
+});
 
-//   var json = dangerPokemons;
-//   axios
-//     .put(`${domain}/_bulk`, JSON.stringify(dangerPokemons))
-//     .then((response) => {
-//       console.log(response);
-//     })
-//     .catch((err) => console.log(`----- bad POST: '${err}' ------`));
-// };
+AWS.config.update({
+	credentials: new AWS.Credentials(awsConfig.accessKeyId, awsConfig.secretAccessKey),
+	region: awsConfig.region
 
-function savePokemonsInvestigation(dangerPokemons = {}) {
-  console.log(dangerPokemons);
-  if (!dangerPokemons || Object.keys(dangerPokemons).length == 0) return false;
+});
 
-  var endpoint = new AWS.Endpoint(domain);
-  var request = new AWS.HttpRequest(endpoint, region);
+const savePokemonsInvestigation = async (dangerPokemons = [])=>{
+	if (!dangerPokemons || Object.keys(dangerPokemons).length == 0) return false;
 
-  request.method = "PUT";
-  request.path += index + "/" + type;
-  // request.path += index + "/" + type + "/" + id;
-  request.body = JSON.stringify(dangerPokemons);
-  request.headers["host"] = domain;
-  request.headers["Content-Type"] = "application/json";
-  request.headers["Content-Length"] = Buffer.byteLength(request.body);
+	var sentPokemonsResultsList = [];
 
-  var credentials = new AWS.EnvironmentCredentials("AWS");
-  var signer = new AWS.Signers.V4(request, "es");
-  signer.addAuthorization(credentials, new Date());
+	const awsCallRequest =  (dangerPokemon)=>{
+		return new Promise((resolve,reject)=>{
+			client.index({
+				index:"pokemon_in_investigation",
+				type:"passport",
+				id:uuid(),
+				body:dangerPokemon
+			},(err, resp, status)=>{
+				if(err || status != 201) {
+					console.log(`Error code ${status}: ${err}`);
+					sentPokemonsResultsList.push({
+						pokemonName:dangerPokemon.name,
+						success:false
+					});
 
-  var client = new AWS.HttpClient();
-  client.handleRequest(
-    request,
-    null,
-    function(response) {
-      console.log(response.statusCode + " " + response.statusMessage);
-      var responseBody = "";
-      response.on("data", function(chunk) {
-        responseBody += chunk;
-      });
-      response.on("end", function(chunk) {
-        console.log("Response body: " + responseBody);
-      });
-    },
-    function(error) {
-      console.log("Error: " + error);
-    }
-  );
+					reject();
+				}
+		
+				sentPokemonsResultsList.push({
+					pokemonName:dangerPokemon.name,
+					success:true
+				});
+	
+				console.log(`The passport of pokemon ${dangerPokemon.name} have been saved successfully.`);
+				resolve();
+			});
+		}).catch((err)=>console.log(`The passport of pokemon ${dangerPokemon.name} have been filed to save.`));
+	}
+
+	for (let index = 0; index < dangerPokemons.length; index++) {
+		const dangerPokemon = dangerPokemons[index];
+		await awsCallRequest(dangerPokemon);
+	}
+
+	return sentPokemonsResultsList;
 }
 
 module.exports.savePokemonsInvestigation = savePokemonsInvestigation;
